@@ -1,6 +1,8 @@
 package radiusparse
 
 import (
+	"bytes"
+	"crypto/md5"
 	"encoding/binary"
 	"errors"
 )
@@ -178,4 +180,80 @@ func (p *Packet) String(name string) string {
 		return string(raw)
 	}
 	return ""
+}
+
+// Encode encodes the packet to wire format. If there is an error encoding the
+// packet, nil and an error is returned.
+func (p *Packet) Encode() ([]byte, error) {
+	var bufferAttrs bytes.Buffer
+
+	for _, attr := range p.Attributes {
+		codec := p.Dictionary.Codec(attr.Type)
+		wire, err := codec.Encode(p, attr.Value)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(wire) > 253 {
+			return nil, errors.New("radius: encoded attribute is too long")
+		}
+
+		bufferAttrs.WriteByte(attr.Type)
+		bufferAttrs.WriteByte(byte(len(wire) + 2))
+		bufferAttrs.Write(wire)
+	}
+
+	length := 20 + bufferAttrs.Len()
+	if length > maxPacketSize {
+		return nil, errors.New("radius: encoded packet is too long")
+	}
+
+	var buffer bytes.Buffer
+	buffer.Grow(length)
+	buffer.WriteByte(byte(p.Code))
+	buffer.WriteByte(p.Identifier)
+	binary.Write(&buffer, binary.BigEndian, uint16(length))
+
+	switch p.Code {
+	case CodeAccessRequest, CodeStatusServer:
+		buffer.Write(p.Authenticator[:])
+		break
+
+	case CodeCoARequest, CodeDisconnectRequest, CodeAccessAccept, CodeAccessReject, CodeAccountingRequest, CodeAccountingResponse, CodeAccessChallenge, CodeCoAACK, CodeCoANAK, CodeDisconnectACK, CodeDisconnectNAK:
+		hash := md5.New()
+		hash.Write(buffer.Bytes())
+
+		switch p.Code {
+		case CodeAccountingRequest, CodeCoARequest, CodeDisconnectRequest:
+			var nul [16]byte
+			hash.Write(nul[:])
+			break
+
+		default:
+			hash.Write(p.Authenticator[:])
+			break
+		}
+
+		hash.Write(bufferAttrs.Bytes())
+		hash.Write(p.Secret)
+
+		var sum [16]byte
+		buffer.Write(hash.Sum(sum[0:0]))
+
+		// We overwrite the original authenticator because it will be used in IsAuthentic() to authenticate a reply
+		switch p.Code {
+		case CodeCoARequest, CodeDisconnectRequest:
+			copy(p.Authenticator[:], sum[:])
+			break
+		}
+
+		break
+
+	default:
+		return nil, errors.New("radius: unknown Packet code")
+	}
+
+	buffer.ReadFrom(&bufferAttrs)
+
+	return buffer.Bytes(), nil
 }
