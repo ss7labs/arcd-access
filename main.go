@@ -81,6 +81,7 @@ func RunConnection(conn *Connection) {
 		if checkreport(1, err) {
 			continue
 		}
+		parseReply(buffer[0:n])
 		// Relay it to client
 		_, err = ProxyConn.WriteToUDP(buffer[0:n], conn.ClientAddr)
 		if checkreport(1, err) {
@@ -89,6 +90,10 @@ func RunConnection(conn *Connection) {
 		Vlogf(3, "Relayed '%s' from server to %s.\n",
 			string(buffer[0:n]), conn.ClientAddr.String())
 	}
+}
+
+func parseReply(udp []byte) {
+	fmt.Println(udp)
 }
 
 // Routine to handle inputs to Proxy port
