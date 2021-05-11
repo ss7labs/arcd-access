@@ -1,6 +1,7 @@
 package main
 
 import (
+	"arcd-access/radiusparse"
 	"flag"
 	"fmt"
 	"log"
@@ -40,6 +41,8 @@ var ClientDict map[string]*Connection = make(map[string]*Connection)
 
 // Mutex used to serialize access to the dictionary
 var dmutex *sync.Mutex = new(sync.Mutex)
+
+var sessCache *SessCache = New()
 
 func setup(hostport string, port int) bool {
 	// Set up Proxy
@@ -81,9 +84,12 @@ func RunConnection(conn *Connection) {
 		if checkreport(1, err) {
 			continue
 		}
-		parseReply(buffer[0:n])
+		reply := parseReply(buffer[0:n])
+		if reply == nil {
+			continue
+		}
 		// Relay it to client
-		_, err = ProxyConn.WriteToUDP(buffer[0:n], conn.ClientAddr)
+		_, err = ProxyConn.WriteToUDP(reply, conn.ClientAddr)
 		if checkreport(1, err) {
 			continue
 		}
@@ -92,8 +98,36 @@ func RunConnection(conn *Connection) {
 	}
 }
 
-func parseReply(udp []byte) {
-	fmt.Println(udp)
+func parseReply(udp []byte) (reply []byte) {
+	pkt, err := radiusparse.Parse(udp, []byte("secret"), radiusparse.Builtin)
+
+	if err != nil {
+		return
+	}
+
+	if pkt.Code == radiusparse.CodeAccessReject {
+		reply = udp
+		return
+	}
+
+	/*
+		avps,_ := radiusparse.DecodeAVPairs(pkt)
+		for _, avp := range avps {
+			fmt.Println("Accepted",avp.VendorID,avp.TypeID,string(avp.Value))
+		}
+	*/
+	var idx []int
+	for i, attr := range pkt.Attributes {
+		if attr.Type == 26 {
+			idx = append(idx, i)
+		}
+	}
+
+	fmt.Println(len(pkt.Attributes), idx, pkt.Authenticator)
+	pkt.Attributes = pkt.Attributes[:len(pkt.Attributes)-len(idx)]
+	pkt.Authenticator = sessCache.Get(pkt.Identifier)
+	reply, _ = pkt.Encode()
+	return
 }
 
 // Routine to handle inputs to Proxy port
@@ -124,12 +158,21 @@ func RunProxy() {
 			Vlogf(5, "Found connection for client %s\n", saddr)
 			dunlock()
 		}
+		parseRequest(buffer[0:n])
 		// Relay to server
 		_, err = conn.ServerConn.Write(buffer[0:n])
 		if checkreport(1, err) {
 			continue
 		}
 	}
+}
+func parseRequest(udp []byte) {
+	pkt, err := radiusparse.Parse(udp, []byte("secret"), radiusparse.Builtin)
+
+	if err != nil {
+		return
+	}
+	sessCache.Set(pkt.Identifier, pkt.Authenticator)
 }
 
 var verbosity int = 6
