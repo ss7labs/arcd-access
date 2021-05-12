@@ -257,3 +257,18 @@ func (p *Packet) Encode() ([]byte, error) {
 
 	return buffer.Bytes(), nil
 }
+
+// Add adds an attribute whose dictionary name matches the given name.
+func (p *Packet) Add(name string, value interface{}) error {
+	attr, err := p.Dictionary.Attr(name, value)
+	if err != nil {
+		return err
+	}
+	p.AddAttr(attr)
+	return nil
+}
+
+// AddAttr adds the given attribute to the packet.
+func (p *Packet) AddAttr(attribute *Attribute) {
+	p.Attributes = append(p.Attributes, attribute)
+}

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -122,9 +123,14 @@ func parseReply(udp []byte) (reply []byte) {
 		}
 	}
 	trSpeed := speedMap.GetSpeed(speedHuawei)
+	speed, _ := strconv.Atoi(trSpeed)
+	ingressSsa := radiusparse.EncodeAVPairInt(12345, 1, speed)
+	egressSsa := radiusparse.EncodeAVPairInt(12345, 2, speed)
 	fmt.Println(len(pkt.Attributes), idx, trSpeed)
 	pkt.Attributes = pkt.Attributes[:len(pkt.Attributes)-len(idx)]
 	pkt.Authenticator = sessCache.Get(pkt.Identifier)
+	pkt.Add("Vendor-Specific", ingressSsa)
+	pkt.Add("Vendor-Specific", egressSsa)
 	reply, _ = pkt.Encode()
 	return
 }

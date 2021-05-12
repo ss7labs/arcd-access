@@ -9,6 +9,7 @@ import (
 
 // Vendor IDs
 const (
+	VendTR        = 12345
 	VendCisco     = 9
 	VendHuawei    = 2011
 	VendJuniper   = 4874
