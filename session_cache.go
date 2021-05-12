@@ -3,8 +3,8 @@ package main
 import "sync"
 
 type SessCache struct {
-	sync.Mutex // ← этот мьютекс защищает кэш ниже
-	cache      map[byte][16]byte
+	sync.Mutex
+	cache map[byte][16]byte
 }
 
 func New() *SessCache {

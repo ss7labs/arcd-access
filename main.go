@@ -43,6 +43,7 @@ var ClientDict map[string]*Connection = make(map[string]*Connection)
 var dmutex *sync.Mutex = new(sync.Mutex)
 
 var sessCache *SessCache = New()
+var speedMap = makeSpeedMap()
 
 func setup(hostport string, port int) bool {
 	// Set up Proxy
@@ -110,23 +111,28 @@ func parseReply(udp []byte) (reply []byte) {
 		return
 	}
 
-	/*
-		avps,_ := radiusparse.DecodeAVPairs(pkt)
-		for _, avp := range avps {
-			fmt.Println("Accepted",avp.VendorID,avp.TypeID,string(avp.Value))
-		}
-	*/
 	var idx []int
+	var speedHuawei string
 	for i, attr := range pkt.Attributes {
 		if attr.Type == 26 {
+			if speedHuawei == "" {
+				speedHuawei = parseSpeed(attr.Value.([]byte))
+			}
 			idx = append(idx, i)
 		}
 	}
-
-	fmt.Println(len(pkt.Attributes), idx, pkt.Authenticator)
+	trSpeed := speedMap.GetSpeed(speedHuawei)
+	fmt.Println(len(pkt.Attributes), idx, trSpeed)
 	pkt.Attributes = pkt.Attributes[:len(pkt.Attributes)-len(idx)]
 	pkt.Authenticator = sessCache.Get(pkt.Identifier)
 	reply, _ = pkt.Encode()
+	return
+}
+
+func parseSpeed(vsa []byte) (speed string) {
+	if _, _, value, err := radiusparse.DecodeAVPairByte(vsa); err == nil {
+		speed = string(value)
+	}
 	return
 }
 
